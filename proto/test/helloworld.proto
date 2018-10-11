@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package test;
+
+option go_package="github.com/orbli/golang/test";
+
+import "google/protobuf/empty.proto";
+
+service TestService {
+  rpc HelloWorld(google.protobuf.Empty) returns (Pong) {}
+}
+
+message Pong {
+  string HelloWorld = 1;
+}
+

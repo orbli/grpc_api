@@ -1,0 +1,16 @@
+{
+  "name": "grpc_api",
+  "version": "0.0.1",
+  "description": "grpc api across projects",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:orbli/grpc_api.git"
+  },
+  "author": "orb li <mail@orbb.li>",
+  "license": "UNLICENSED",
+  "private": true
+}

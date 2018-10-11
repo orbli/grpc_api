@@ -1,0 +1,231 @@
+containers:
+  grpc:
+    setup:
+      - !Alpine v3.8
+      - !Repo edge/community
+      - !Install
+        - clang
+        - libc6-compat
+        - gcc
+        - go
+        - git
+        - musl-dev
+        - nodejs
+        - npm
+      - !NpmInstall
+        - ts-protoc-gen@next
+      - !PipConfig
+        dependencies: true
+      - !Py3Install
+        - grpcio-tools
+        - googleapis-common-protos
+      - !Unzip
+        url: https://github.com/google/protobuf/releases/download/v3.6.1/protoc-3.6.1-linux-x86_64.zip
+        path: /
+      - !Unzip
+        url: https://github.com/ckaznocha/protoc-gen-lint/releases/download/v0.2.1/protoc-gen-lint_linux_amd64.zip
+        path: /usr/local/bin/
+      - !EnsureDir /go
+      - !Sh |
+          mkdir -p /go
+          ls -al /go
+    volumes:
+      /go: !Persistent
+        name: "go"
+        init-command: _init-golang
+    environ: &go_config
+      GOPATH: /go
+      HOME: /go
+      PATH: /go/bin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:/usr/local/go/bin
+      NODE_PATH: /usr/lib/node_modules
+      EXPORTPATH: /work
+      RESULTPATH: github.com/orbli/grpc_api
+
+  dart:
+    setup:
+      - !Ubuntu xenial
+      - !Install
+        - apt-transport-https
+        - ca-certificates
+        - git
+      - !Download
+        url: https://dl-ssl.google.com/linux/linux_signing_key.pub
+        path: /tmp/linux_signing_key.pub
+      - !Download
+        url: https://storage.googleapis.com/download.dartlang.org/linux/debian/dart_stable.list
+        path: /etc/apt/sources.list.d/dart_stable.list
+      - !Sh |
+          apt-key add /tmp/linux_signing_key.pub
+          apt-get update
+      - !Install
+        - dart/stable
+      - !Unzip
+        url: https://github.com/google/protobuf/releases/download/v3.6.1/protoc-3.6.1-linux-x86_64.zip
+        path: /
+      - !Unzip
+        url: https://github.com/dart-lang/dart-protoc-plugin/archive/0c6a9c00a0d8f1f6becbc0edf6d94f94c4d4de80.zip
+        path: /usr/local
+      - !Sh |
+          HOME=/root
+          /usr/lib/dart/bin/pub global activate -s path /usr/local/dart-protoc-plugin-0c6a9c00a0d8f1f6becbc0edf6d94f94c4d4de80
+    environ: &dart_config
+      HOME: /root
+      PATH: /usr/local/dart-protoc-plugin-0c6a9c00a0d8f1f6becbc0edf6d94f94c4d4de80/bin:/usr/lib/dart/bin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+      EXPORTPATH: /work
+
+commands:
+  _init-golang: !Command
+    description: To build the GoLang environment
+    container: grpc
+    run: |
+      echo "Creating $GOPATH/src"
+      mkdir -p $GOPATH/src
+      mkdir -p $GOPATH/bin
+      echo "Linking project folder"
+      mkdir -p $GOPATH/src/$RESULTPATH
+      rm -r $GOPATH/src/$RESULTPATH
+      ln -snf /work $GOPATH/src/$RESULTPATH
+      if [ ! -f protoc-gen-go ]; then
+        go get -u -v github.com/golang/protobuf/protoc-gen-go
+      fi
+      if [ ! -f protoc-gen-dart ]; then
+        go get -u -v github.com/golang/protobuf/protoc-gen-go
+      fi
+
+  terminal-grpc: !Command
+    description: Create a new runner instance and bash into it (For managing volume only!)
+    container: grpc
+    work-dir: /work
+    run: [sh]
+
+  terminal-dart: !Command
+    description: Create a new runner instance and bash into it (For managing volume only!)
+    container: dart
+    work-dir: /work
+    run: [bash]
+
+  gen-stub-python: !Command
+    description: generate gRPC stubs for python tests, must call from project root dir (feed a .proto file)
+    options: |
+        Usage: vagga gen-stub-python [<file>...]
+    container: grpc
+    work-dir: /work
+    run: |
+      echo Generating python stubs:
+      target=$EXPORTPATH/python
+      mkdir -p $target
+
+      if [ -z $VAGGAOPT_FILE ]; then
+        PROTOS=`find proto -type f`
+      else
+        PROTOS=$VAGGAOPT_FILE
+      fi
+
+      for i in $PROTOS; do
+        echo - $i
+        python3 -m grpc_tools.protoc -I/include -I./proto\
+          --python_out=$target --grpc_python_out=$target $i
+      done
+
+      #put __init__.py into each directories
+      cd python
+      for i in `find * -type d`; do
+        echo "name = \"$(basename $i)\"" > $i/__init__.py;
+      done
+
+  gen-stub-golang: !Command
+    description: generate gRPC stubs for golang, must call from project root dir (feed a .proto file)
+    options: |
+        Usage: vagga gen-stub-golang [<file>...]
+    container: grpc
+    work-dir: /work
+    run: |
+      echo Generating golang stubs:
+      if [ -z $VAGGAOPT_FILE ]; then
+        PROTOS=`find proto -type f`
+      else
+        PROTOS=$VAGGAOPT_FILE
+      fi
+
+      target=$EXPORTPATH/golang
+      mkdir -p $target
+
+      for i in $PROTOS; do
+        echo - $i
+        protoc -I/include -I./proto -I$GOPATH/src \
+          --go_out=plugins=grpc:$GOPATH/src $i
+      done
+
+  gen-stub-js: !Command
+    options: |
+      Usage: vagga gen-stub-js [<file>...]
+    container: grpc
+    work-dir: /work
+    run: |
+      echo Generating js stubs:
+      if [ -z $VAGGAOPT_FILE ]; then
+        PROTOS=`find proto -type f`
+      else
+        PROTOS=$VAGGAOPT_FILE
+      fi
+
+      target=$EXPORTPATH/js
+      mkdir -p $target
+
+      for i in $PROTOS; do
+        echo - $i
+        protoc -I/include -I./proto \
+          --js_out=import_style=commonjs,binary:$target \
+          --ts_out=service=true:$target $i
+      done
+
+  gen-stub-dart: !Command
+    options: |
+      Usage: vagga gen-stub-dart [<file>...]
+    prerequisites: [gen-stub-dart-google-packages]
+    container: dart
+    work-dir: /work
+    run: |
+      echo Generating dart stubs:
+      if [ -z $VAGGAOPT_FILE ]; then
+        PROTOS=`find proto -type f`
+      else
+        PROTOS=$VAGGAOPT_FILE
+      fi
+
+      target=$EXPORTPATH/dart
+      mkdir -p $target/lib
+
+      for i in $PROTOS; do
+        echo - $i
+        protoc -I/include -I./proto \
+          --dart_out=grpc:$target/lib $i
+      done
+
+  gen-stub-dart-google-packages: !Command
+    container: dart
+    work-dir: /work
+    run: |
+      echo Generating dart stubs for google packages:
+      target=$EXPORTPATH/dart
+      mkdir -p $target/lib
+      for i in google/protobuf/timestamp.proto google/protobuf/any.proto; do
+        echo - /include/$i
+        protoc -I/include --dart_out=grpc:$target/lib $i
+      done
+
+  format-grpc: !Command
+    description: clang-format-7 -i -verbose (accepting arguments)
+    options: |
+        Usage: vagga format-grpc [<file>...]
+    container: grpc
+    run: |
+      if [ $VAGGAOPT_FILE ]; then
+           clang-format -i $VAGGAOPT_FILE
+      fi
+
+  gen-all: !Command
+    description: Generate all proto files
+    prerequisites: [gen-stub-python, gen-stub-golang, gen-stub-dart, gen-stub-js]
+    container: grpc
+    run: [echo]
