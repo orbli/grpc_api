@@ -43,11 +43,12 @@ containers:
 
   dart:
     setup:
-      - !Ubuntu xenial
+      - !Ubuntu bionic
       - !Install
         - apt-transport-https
         - ca-certificates
         - git
+        - gnupg
       - !Download
         url: https://dl-ssl.google.com/linux/linux_signing_key.pub
         path: /tmp/linux_signing_key.pub
