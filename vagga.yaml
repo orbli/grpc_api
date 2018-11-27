@@ -154,7 +154,7 @@ commands:
       for i in $PROTOS; do
         echo - $i
         protoc -I/include -I./proto -I$GOPATH/src \
-          --go_out=plugins=grpc:$GOPATH/src $i
+          --go_out=plugins=grpc:$target $i
       done
 
   gen-stub-js: !Command
